@@ -10,6 +10,12 @@ Link to the paper: [arxiv](https://arxiv.org/pdf/2307.02912.pdf).
     - Link to the datasets: [zenodo](https://zenodo.org/records/10401846).
 - [December 18, 2023] Updated documentation.
 
+## Pending tasks
+
+* [x] Update documentation.
+* [x] Upload test splits.
+* [ ] Upload LEA's module code.
+
 ## Abstract
 Textual noise, such as typos or abbreviations, is a well-known issue that penalizes vanilla Transformers for most downstream tasks. We show that this is also the case for sentence similarity, a fundamental task in multiple domains, e.g. matching, retrieval or paraphrasing. Sentence similarity can be approached using cross-encoders, where the two sentences are concatenated in the input allowing the model to exploit the inter-relations between them. Previous works addressing the noise issue mainly rely on data augmentation strategies, showing improved robustness when dealing with corrupted samples that are similar to the ones used for training. However, all these methods still suffer from the token distribution shift induced by typos. In this work, we propose to tackle textual noise by equipping cross-encoders with a novel LExical-aware Attention module (LEA) that incorporates lexical similarities between words in both sentences. By using raw text similarities, our approach avoids the tokenization shift problem obtaining improved robustness. We demonstrate that the attention bias introduced by LEA helps cross-encoders to tackle complex scenarios with textual noise, specially in domains with short-text descriptions and limited context. Experiments using three popular Transformer encoders in five e-commerce datasets for product matching show that LEA consistently boosts performance under the presence of noise, while remaining competitive on the original (clean) splits. We also evaluate our approach in two datasets for textual entailment and paraphrasing showing that LEA is robust to typos in domains with longer sentences and more natural context. Additionally, we thoroughly analyze several design choices in our approach, providing insights about the impact of the decisions made and fostering future research in cross-encoders dealing with typos.
 
@@ -30,15 +36,30 @@ In Figure 2 we show how to integrate LEA within the attention module of regular 
 
 LEA has been tested in several datasets using a corrupted version of their test splits. In this [LINK](https://zenodo.org/records/10401846) we share the test splits of all datasets as they are used in the paper to promote reproducibility and comparison. 
 
-As described in the paper, we introduce textual noise that is normally present in the domains of each dataset. Training and validation splits remains the same as the original datasets.
+As described in the paper, we introduce textual noise that is normally present in the domains of each dataset. Training and validation splits remain the same as the original datasets.
 
+Available datasets:
+- WDC-Computers (small, medium, large, xlarge)
+- WDC-All (xlarge)
+- Abt-Buy
+- Amazon-Google
+- RTE
+- MRPC
 
+## Instructions to reproduce results
 
-## Pending tasks
+Work in progress.
 
-* [x] Update documentation.
-* [x] Upload test splits.
-* [ ] Upload LEA's module code.
+## Main results
+
+- E-commerce public datasets:
+<img src="images/LEA_results_ecom_noise.jpg" height="280rm">
+
+- Natural language public datasets:
+<img src="images/LEA_results_natural_noise.jpg" height="150rm">
+
+- Comparison with auto-regressive models of comparable sizes:
+<img src="images/LEA_results_gpt_noise.jpg" height="300rm">
 
 ## Citation
 
