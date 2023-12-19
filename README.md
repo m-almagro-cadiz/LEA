@@ -2,10 +2,15 @@
 
 ### Main research track @ [29th ACM Conference on Knowledge Discovery and Data Mining (KDD'23)](https://kdd.org/kdd2023/)
 
+Authors: Mario Almagro*, Emilio Almazán*, Diego Ortego, David Jiménez*
+
+Affiliation: [NIQ](https://nielseniq.com/global/en/) Innovation (Core Models team)
+
 Link to the paper: [arxiv](https://arxiv.org/pdf/2307.02912.pdf).
 
 ## NEWS!
 
+- [December 19, 2023] LEA4BERT code available.
 - [December 18, 2023] Added link to download all test splits in the paper.
     - Link to the datasets: [zenodo](https://zenodo.org/records/10401846).
 - [December 18, 2023] Updated documentation.
