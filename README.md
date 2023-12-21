@@ -39,7 +39,7 @@ In Figure 2 we show how to integrate LEA within the attention module of regular 
 
 ## Test splits
 
-LEA has been tested in several datasets using a corrupted version of their test splits. In this [LINK](https://zenodo.org/records/10401846) we share the test splits of all datasets as they are used in the paper to promote reproducibility and comparison. 
+LEA has been tested in several datasets using a corrupted version of their test splits. In this [LINK](https://zenodo.org/records/10401846) you can download the test splits for all datasets used in the paper. 
 
 As described in the paper, we introduce textual noise that is normally present in the domains of each dataset. Training and validation splits remain the same as the original datasets.
 
@@ -53,7 +53,7 @@ Available datasets:
 
 ## Instructions to reproduce results
 
-Work in progress.
+In this section we will provide the instructions to reproduce the results of the paper. Note that the code shared in this repo is extracted from a private library, so one might expect minor changes on the results.
 
 ## Main results
 
