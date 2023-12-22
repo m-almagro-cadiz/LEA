@@ -21,6 +21,7 @@ import os
 import warnings
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union
+from packaging import version
 
 import torch
 import torch.utils.checkpoint
@@ -49,7 +50,7 @@ from transformers.utils import (
     logging,
     replace_return_docstrings,
 )
-from configuration_bert import BertConfig
+from .configuration_bert import BertConfig
 
 
 logger = logging.get_logger(__name__)
@@ -103,6 +104,40 @@ BERT_PRETRAINED_MODEL_ARCHIVE_LIST = [
     # See all BERT models at https://huggingface.co/models?filter=bert
 ]
 
+class PositionalEmbedding1D(nn.Module):
+    # Reference: https://github.com/kimiyoung/transformer-xl/blob/master/pytorch/mem_transformer.py#L15
+
+    def __init__(self, demb):
+        super(PositionalEmbedding1D, self).__init__()
+        self.demb = demb
+        # inv_freq = math.pi / (10000 ** (torch.arange(0.0, demb, 2.0) / demb))
+        inv_freq = 2 * math.pi / (10000 ** (torch.arange(0.0, demb, 2.0) / demb))
+        self.register_buffer("inv_freq", inv_freq)
+
+    def forward(self, pos_seq, bsz=None):
+        seq_size = pos_seq.size()
+
+        if len(seq_size) == 1:
+            b1 = seq_size
+            sinusoid_inp = pos_seq.view(b1, 1).unsqueeze(-1) * self.inv_freq.view(
+                1, self.demb // 2
+            )
+        elif len(seq_size) == 2:
+            b1, b2 = seq_size
+            sinusoid_inp = pos_seq.view(b1, b2, 1) * self.inv_freq.view(
+                1, 1, self.demb // 2
+            )
+        elif len(seq_size) == 3:
+            b1, b2, b3 = seq_size
+            sinusoid_inp = pos_seq.view(b1, b2, b3, 1) * self.inv_freq.view(
+                1, 1, 1, self.demb // 2
+            )
+        else:
+            raise ValueError(f"Invalid seq_size={len(seq_size)}")
+
+        pos_emb = torch.cat([sinusoid_inp.sin(), sinusoid_inp.cos()], dim=-1)
+
+        return pos_emb
 
 def load_tf_weights_in_bert(model, config, tf_checkpoint_path):
     """Load tf checkpoints in a pytorch model."""
@@ -216,7 +251,6 @@ class BertEmbeddings(nn.Module):
 
     def define_lexical_embeddings(
         self,
-        lea_sim_sparse: bool = True,
         lea_embedding_learnable: bool = False,
         lea_embedding_n: int = 25,
         lea_embedding_dim: int = 50,
@@ -225,7 +259,6 @@ class BertEmbeddings(nn.Module):
         Define all variables involved in the lexical similarity embeddings.
 
         Args:
-           lea_sim_sparse (bool): flag indicating if sparse matrices will be used.
            lea_embedding_learnable (bool): flag indicating if learnable embeddings will be used (True). If not (False), fixed sinusoidal embeddings will be used.
            lea_embedding_n (int): number of unique values. The range of values from 0 to 1 is divided into N points, and the values are approximated to the nearest point.
            lea_embedding_dim (int): number of dimensions for the lexical similarity embeddings
@@ -237,7 +270,6 @@ class BertEmbeddings(nn.Module):
         else:
             # Define sinusoidal embeddings
             self.lex_sim_sinusoid_emb = PositionalEmbedding1D(lea_embedding_dim)
-        self.lea_sim_sparse = lea_sim_sparse
 
     def forward(
         self,
@@ -294,16 +326,9 @@ class BertEmbeddings(nn.Module):
         Args:
            lex_sim (torch.tensor): lexical similarity values
         """
-        if self.lea_sim_sparse:
-            # Compute lexical similarity values using sparse matrix
-            return self.calc_sparse_sin_lex_sim_emb(
-                lex_sim.to(torch.int32) if self.lea_embedding_learnable else lex_sim
-            )
-        else:
-            # Compute lexical similarity values using dense matrix
-            return self.calc_dense_sin_lex_sim_emb(
-                lex_sim.to(torch.int32) if self.lea_embedding_learnable else lex_sim
-            )
+        if self.lea_embedding_learnable:
+            lex_sim = lex_sim.to(torch.int32)
+        return self.calc_sparse_sin_lex_sim_emb(lex_sim)
 
     def calc_sparse_sin_lex_sim_emb(self, lex_sim: torch.tensor):
         """
@@ -312,39 +337,16 @@ class BertEmbeddings(nn.Module):
         Args:
            lex_sim (torch.tensor): lexical similarity values
         """
-        # Get unique values and indices
-        lex_sim_val, lex_sim_ind = lex_sim.unique(return_inverse=True)
         # Get sinusoidal embeddings for values
-        lex_sim_emb = self.lex_sim_sinusoid_emb(lex_sim_val)
+        lex_sim_emb = self.lex_sim_sinusoid_emb(lex_sim[0])
         # Get mask
-        mask = torch.nn.functional.one_hot(lex_sim_ind)
+        mask = torch.nn.functional.one_hot(lex_sim[1])
         # Select precision
-        if common_cfg.experiment.precision == 16:
-            return (lex_sim_emb.half(), mask.half())
-        else:
-            return (lex_sim_emb.float(), mask.float())
-
-    def calc_dense_sin_lex_sim_emb(self, lex_sim: torch.tensor):
-        """
-        Compute sinusoidal embeddings using dense matrices
-
-        Args:
-           lex_sim (torch.tensor): lexical similarity values
-        """
-        # Prepare the lexical similarity values as [seq_length, seq_length, batch_size]
-        lex_sim_t = lex_sim.permute([1, 2, 0])
-        # Apply the sinusoidal function getting the following dimensions: [seq_length, seq_length, batch_size, dim_lex_sim]
-        lex_sim_emb = self.lex_sim_sinusoid_emb(lex_sim_t)
-        # Select precision
-        if common_cfg.experiment.precision == 16:
-            return lex_sim_emb.half()
-        else:
-            return lex_sim_emb.float()
-
+        return (lex_sim_emb.float(), mask.float())
 
 
 class BertSelfAttention(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, position_embedding_type=None):
         super().__init__()
         if config.hidden_size % config.num_attention_heads != 0 and not hasattr(
             config, "embedding_size"
@@ -384,7 +386,6 @@ class BertSelfAttention(nn.Module):
     def define_projection_layer(
         self,
         lea_embedding_dim: int = 50,
-        lea_sim_sparse: bool = True,
         lea_factor: float = 1.0,
         lea_automatic_factor: bool = False,
         lea_double_projection: bool = False,
@@ -395,13 +396,11 @@ class BertSelfAttention(nn.Module):
 
         Args:
            lea_embedding_dim (int): dimension for the lexical simiarity embeddings
-           lea_sim_sparse (bool): flag indicating if the lexical similarity matrix is enforced to be sparse for reducing memory use (True)
            lea_factor (float): value to weight the lexical term in the attention to align the magnitude with the semantic term
            lea_automatic_factor (bool): flag indicating if the factor will be computed automatically in the first step (True) or will be introduced manually (False)
            lea_double_projection (bool): flag indicating if two projection layers will be used (True): one for the lexical values and one for the semantic values. Otherwise, only the projection layer for the lexical values will be used
            lea_n_heads (int): number of heads using LEA for each layer
         """
-        self.lea_sim_sparse = lea_sim_sparse
         self.lea_automatic_factor = lea_automatic_factor
         self.lea_factor = lea_factor
         self.lea_double_projection = lea_double_projection
@@ -528,17 +527,11 @@ class BertSelfAttention(nn.Module):
                 # Project lexical similarity embeddings into a new space
                 # Use first position if sparse, which contains all the unique values
                 # Otherwise, directly use the whole matrix
-                lex_att_head_n = getattr(self, f"lex_sim_projection_head_{n}")(
-                    lex_sim_emb[0] if self.lea_sim_sparse else lex_sim_emb
-                )
+                lex_att_head_n = getattr(self, f"lex_sim_projection_head_{n}")(lex_sim_emb[0])
                 # Allocate the unique values in the corresponding cells of the sparse matrix
-                # Otherwise, remove one dimension and prepare the values in the proper way
-                if self.lea_sim_sparse:
-                    lex_att_head_n = torch.einsum(
-                        "abcd,de->abc", (lex_sim_emb[1], lex_att_head_n)
-                    )
-                else:
-                    lex_att_head_n = lex_att_head_n.permute([2, 0, 1, 3]).squeeze(dim=3)
+                lex_att_head_n = torch.einsum(
+                    "abcd,de->abc", (lex_sim_emb[1], lex_att_head_n)
+                )
             else:
                 # Prepare an empty lexical attention matrix if LEA is deactivated
                 lex_att_head_n = torch.zeros(
@@ -1223,7 +1216,6 @@ class BertModel(BertPreTrainedModel):
 
     def set_additional_params(
         self,
-        lea_sim_sparse=True,
         lea_embedding_learnable=False,
         lea_embedding_n=25,
         lea_embedding_dim=50,
@@ -1237,7 +1229,6 @@ class BertModel(BertPreTrainedModel):
         """Define LEA parameters"""
         self.config.lea_init_std = lea_init_std
         self.embeddings.define_lexical_embeddings(
-            lea_sim_sparse,
             lea_embedding_learnable,
             lea_embedding_n,
             lea_embedding_dim,
@@ -1247,7 +1238,6 @@ class BertModel(BertPreTrainedModel):
         for n in range(len(self.encoder.layer)):
             self.encoder.layer[n].attention.self.define_projection_layer(
                 lea_embedding_dim,
-                lea_sim_sparse,
                 lea_factor,
                 lea_automatic_factor,
                 lea_double_projection,

@@ -157,7 +157,6 @@ class BertConfig(PretrainedConfig):
         position_embedding_type="absolute",
         use_cache=True,
         classifier_dropout=None,
-        lea_sim_sparse=True,
         lea_init_std=0.02,
         lea_factor=1.0,
         lea_automatic_factor=False,
@@ -183,7 +182,6 @@ class BertConfig(PretrainedConfig):
         self.position_embedding_type = position_embedding_type
         self.use_cache = use_cache
         self.classifier_dropout = classifier_dropout
-        self.lea_sim_sparse = lea_sim_sparse
         self.lea_init_std = lea_init_std
         self.lea_factor = lea_factor
         self.lea_automatic_factor = lea_automatic_factor
